@@ -1071,3 +1071,19 @@ fn core_properties_survive_save() {
     let (again, _) = read_xlsx(&saved).unwrap();
     assert_eq!(written_core(&write_xlsx(&again).unwrap()), xml);
 }
+
+#[test]
+fn doc_props_keep_boundary_whitespace() {
+    let mut wb = Workbook::new();
+    wb.props = DocProps {
+        title: "  Title  ".into(),
+        subject: "\n".into(),
+        author: "\tMe\t".into(),
+        company: " Co ".into(),
+        keywords: " a, b ".into(),
+        description: "\n  d\n".into(),
+        ..Default::default()
+    };
+    let (back, _) = read_xlsx(&write_xlsx(&wb).unwrap()).unwrap();
+    assert_eq!(back.props, wb.props);
+}

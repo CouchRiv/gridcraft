@@ -86,9 +86,10 @@ up by *signature*, `expected type → actual type` (e.g. `number → #SPILL!`), 
 **Round trip.** The recalculated workbook is written with GridCraft's XLSX writer, the package is validated (every
 part has a content type, every content-type override and internal relationship target exists, relationship ids are
 unique: what Excel would "repair") and read back. Categories compared: `package`, `sheets` (names and order),
-`values`, `formulas`, `numFmts` (per cell), `merges`, `names`, `tables` (name, range, columns), `condFormats` (rules
-per sheet), `validations`, `charts` (kinds and series counts), `comments`, `hyperlinks`, `pivots`. `#SPILL!`/`#CALC!`
-compare equal to `#VALUE!` and `#CIRC!` to 0, as that's what the file format stores.
+`values`, `formulas`, `numFmts` (per cell), `merges`, `names`, `tables` (name, range, columns), `condFormats` (each
+sheet's rules in priority order, priority numbers aside), `validations`, `charts` (kinds and series counts), `comments`,
+`hyperlinks`, `pivots`. `#SPILL!`/`#CALC!` compare equal to `#VALUE!` and `#CIRC!` to 0, as
+that's what the file format stores.
 
 `properties` compares the document properties of `docProps/core.xml` field by field, for every property GridCraft keeps
 (title, subject, creator, keywords, description, lastModifiedBy, lastPrinted, created, modified, category,

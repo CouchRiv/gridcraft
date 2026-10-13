@@ -79,6 +79,7 @@ refresh. Counted under features (Get & Transform, ~10% ready), not here.
 | Date | Change | Summary |
 |---|---|---|
 | 2026-10-12 | minor | XLSX: the core document properties beyond title, subject, author, keywords and comments (created, modified, last modified by, last printed, category, status, revision, version, identifier, language) are read and written back (they were dropped on save), and Save records the save time and the user name (`modified`, `lastModifiedBy`; `created` the first time) as Excel does |
+| 2026-10-12 | minor | macOS: the app bundle declares `.xlsb` and `.ods`, so Finder's Open With offers GridCraft for them, as Linux and Windows already did (#321) |
 | 2026-10-12 | minor | CSV: saving a file opened as CSV keeps its detected separator (`;` files were rewritten with `,`) |
 | 2026-10-11 | minor | XLSX: cell/shared/array formulas read through the file→model conversion (`_xlpm.` LET/LAMBDA parameter prefixes stripped); table column names keep line breaks; table names may start with `\` |
 | 2026-10-11 | minor | CSV/TSV export writes displayed values (number formats applied, no `#####`); `.xltx`, `.xltm` and `.xlsm` saved with their own workbook content types |
