@@ -16,15 +16,19 @@ pub fn specs() -> Vec<CommandSpec> {
             "Insert Sheet Rows",
             ["Home", "Cells", "Insert"],
             Some("Ctrl+Shift+="),
-            "{rows?: \"3:5\", count?}",
+            "{rows?: \"3:5\", count?}: the new rows take the formats of the row above (Format Same As Above)",
             has_doc,
             |s, p| insert_lines(s, p, Axis::Rows)
         ),
-        cmd!("home.insertColumns", "Insert Sheet Columns", ["Home", "Cells", "Insert"], None, "{cols?: \"B:C\"}", has_doc, |s, p| insert_lines(
-            s,
-            p,
-            Axis::Cols
-        )),
+        cmd!(
+            "home.insertColumns",
+            "Insert Sheet Columns",
+            ["Home", "Cells", "Insert"],
+            None,
+            "{cols?: \"B:C\"}: the new columns take the formats of the column to the left",
+            has_doc,
+            |s, p| insert_lines(s, p, Axis::Cols)
+        ),
         cmd!("home.deleteRows", "Delete Sheet Rows", ["Home", "Cells", "Delete"], Some("Cmd+-"), "{rows?}", has_doc, |s, p| delete_lines(
             s,
             p,
@@ -36,7 +40,15 @@ pub fn specs() -> Vec<CommandSpec> {
             Axis::Cols
         )),
         cmd!("sheet.moveColumns", "Move Columns", [], None, "{cols?: \"B:C\", before: zero-based column index}", has_doc, move_columns),
-        cmd!("home.insertCells", "Insert Cells…", ["Home", "Cells", "Insert"], None, "{range?, shift: right|down|row|column}", has_doc, insert_cells),
+        cmd!(
+            "home.insertCells",
+            "Insert Cells…",
+            ["Home", "Cells", "Insert"],
+            None,
+            "{range?, shift: right|down|row|column}: the new cells take the formats of the cells above (down) or to the left (right)",
+            has_doc,
+            insert_cells
+        ),
         cmd!(
             "home.insertCopiedCells",
             "Insert Copied Cells",
@@ -247,6 +259,61 @@ fn cancel_copy_mode(s: &mut Session) {
     }
 }
 
+/// Most cells one insert formats like the line before. Past it (a thousand rows under a row
+/// formatted cell by cell across the sheet), the inserted cells are left unformatted rather than
+/// storing millions of them; whole rows and columns still take the line's own format.
+const MAX_FORMAT_SAME_AS_ABOVE: u64 = 1_000_000;
+
+/// Gives the cells inserted at lines `at..at + count` the formats of the cells in line `at - 1`,
+/// over `k0..=k1` across (Excel's "Format Same As Above", `Range.Insert`'s default `CopyOrigin`).
+/// Only formats: values, formulas, comments, links and merges stay behind. An insert at the first
+/// line has no line before it and keeps its cells unformatted. With `whole_lines` the new lines
+/// already took the row or column format of the line before, so only its stored cells can differ.
+fn format_same_as_before(sh: &mut Sheet, axis: Axis, at: u32, count: u32, (k0, k1): (u32, u32), whole_lines: bool) {
+    let Some(prev) = at.checked_sub(1) else { return };
+    if k0 > k1 {
+        return;
+    }
+    let end = at.saturating_add(count).min(if axis == Axis::Rows { MAX_ROWS } else { MAX_COLS });
+    let lines = end.saturating_sub(at) as u64;
+    let cell = |line: u32, k: u32| if axis == Axis::Rows { CellRef::new(line, k) } else { CellRef::new(k, line) };
+    let line_style = if axis == Axis::Rows { sh.rows.get(&prev) } else { sh.cols.get(&prev) }.and_then(|l| l.style);
+    // Where a source cell's format can differ from what the new cell gets from its row and column:
+    // where a cell is stored, or (inserted cells only) where a row or column format reaches.
+    let across: Vec<u32> = if !whole_lines && line_style.is_some() {
+        if (u64::from(k1 - k0) + 1).saturating_mul(lines) > MAX_FORMAT_SAME_AS_ABOVE {
+            return;
+        }
+        (k0..=k1).collect()
+    } else {
+        let mut v: Vec<u32> = if axis == Axis::Rows {
+            sh.cells.row(prev, k0, k1).map(|(k, _)| k).collect()
+        } else {
+            sh.cells.iter_range(RangeRef::new(cell(prev, k0), cell(prev, k1))).map(|(c, _)| c.row).collect()
+        };
+        if !whole_lines {
+            let other = if axis == Axis::Rows { &sh.cols } else { &sh.rows };
+            v.extend(other.range(k0..=k1).filter(|(_, l)| l.style.is_some()).map(|(k, _)| *k));
+            v.sort_unstable();
+            v.dedup();
+        }
+        v
+    };
+    let styled: Vec<(u32, gridcraft_model::StyleId)> =
+        across.into_iter().map(|k| (k, sh.style_id(cell(prev, k)))).filter(|(_, st)| *st != gridcraft_model::StyleId::DEFAULT).collect();
+    if styled.is_empty() || (styled.len() as u64).saturating_mul(lines) > MAX_FORMAT_SAME_AS_ABOVE {
+        return;
+    }
+    for line in at..end {
+        for &(k, st) in &styled {
+            let c = cell(line, k);
+            if sh.style_id(c) != st {
+                sh.set_style(c, st);
+            }
+        }
+    }
+}
+
 fn insert_lines(s: &mut Session, p: &Json, axis: Axis) -> Result<Json> {
     let (at, count) = lines(s, p, axis)?;
     let limit = if axis == Axis::Rows { MAX_ROWS } else { MAX_COLS };
@@ -283,6 +350,9 @@ fn insert_lines(s: &mut Session, p: &Json, axis: Axis) -> Result<Json> {
                     }
                 }
             }
+            // So do their cells.
+            let across = if axis == Axis::Rows { MAX_COLS } else { MAX_ROWS };
+            format_same_as_before(sh, axis, at, count, (0, across - 1), true);
         }
         rewrite(&mut cx.wb, &name, &Edit::Insert { axis, at, count });
         cx.structural = true;
@@ -444,6 +514,12 @@ fn insert_cells(s: &mut Session, p: &Json) -> Result<Json> {
             sh.cells.shift_rows_in_cols(r.start.col, r.end.col, r.start.row, r.height() as i64);
         }
         shift_cell_features(sh, &e);
+        // The new cells take the format of the cells above them, or to their left for a shift right.
+        if right {
+            format_same_as_before(sh, Axis::Cols, r.start.col, r.width(), (r.start.row, r.end.row), false);
+        } else {
+            format_same_as_before(sh, Axis::Rows, r.start.row, r.height(), (r.start.col, r.end.col), false);
+        }
         let name = cx.wb.sheet(sheet).map(|s| s.name.clone()).unwrap_or_default();
         rewrite(&mut cx.wb, &name, &e);
         cx.structural = true;
