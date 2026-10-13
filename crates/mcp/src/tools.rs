@@ -28,6 +28,10 @@ impl ToolResult {
     }
 }
 
+/// Cells `read_range` returns per call unless asked otherwise: whole rows, so that a long export
+/// comes in pages an agent can hold rather than one reply of megabytes.
+const READ_RANGE_MAX_CELLS: u32 = 5_000;
+
 // ---------- schemas ----------
 
 fn string(desc: &str) -> Value {
@@ -147,13 +151,16 @@ pub fn tool_definitions() -> Vec<Value> {
             "Read range",
             "Read cell values from a range as rows (2-D array). Numbers/booleans/strings are returned as JSON values, empty cells as \
              null, errors as {\"error\":\"#DIV/0!\"}. Without `range`, reads the sheet's used range. formulas:true returns formula \
-             text (\"=SUM(B2:B4)\") for formula cells; formatted:true returns the displayed text (\"$1,234.00\", \"12%\").",
+             text (\"=SUM(B2:B4)\") for formula cells; formatted:true returns the displayed text (\"$1,234.00\", \"12%\"). \
+             One call returns whole rows up to maxCells cells (default 5000): a longer range comes back with \"truncated\": true, \
+             \"totalRows\" and \"next\", the range of the remaining rows, to pass as `range` in the next call.",
             obj(
                 json!({
                     "range": string(RANGE),
                     "sheet": string("Sheet name (default: the active sheet)"),
                     "formulas": boolean("Return formulas instead of computed values for formula cells"),
                     "formatted": boolean("Return display text with number formats applied"),
+                    "maxCells": int("Most cells per call, in whole rows (default 5000)"),
                 }),
                 &[],
             ),
@@ -572,7 +579,13 @@ fn dispatch(b: &mut dyn Backend, name: &str, a: &Args) -> Result<Value, String> 
         }
         "list_commands" => b.call("engine.commands", pick(a, &["search"])),
         "inspect_workbook" => b.call("document.inspect", json!({})),
-        "read_range" => b.call("sheet.read", pick(a, &["range", "sheet", "formulas", "formatted"])),
+        "read_range" => {
+            let mut p = pick(a, &["range", "sheet", "formulas", "formatted", "maxCells"]);
+            if let Some(o) = p.as_object_mut() {
+                o.entry("maxCells").or_insert(json!(READ_RANGE_MAX_CELLS));
+            }
+            b.call("sheet.read", p)
+        }
         "write_range" => exec(b, "range.setValues", pick(a, &["range", "values"])),
         "set_cell" => exec(b, "cell.set", pick(a, &["cell", "input"])),
         "get_cell" => exec(b, "cell.get", pick(a, &["cell"])),

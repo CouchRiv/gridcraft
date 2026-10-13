@@ -2612,6 +2612,33 @@ fn icon_set_thresholds_from_files_pick_the_icon() {
     assert_eq!([icon(&s, "A1"), icon(&s, "A2"), icon(&s, "A3"), icon(&s, "A4")], [Some(0), Some(1), Some(1), Some(2)]);
 }
 
+/// `sheet.read {maxCells}` reads whole rows up to that many cells and points at the rest, so a long
+/// export can be read in pages.
+#[test]
+fn reading_a_range_in_pages() {
+    let mut s = s();
+    s.execute("home.insertSheet", json!({"name": "My Data"})).unwrap();
+    let rows: Vec<serde_json::Value> = (1..=10).map(|i| json!([i, i * 10, format!("r{i}")])).collect();
+    s.execute("range.setValues", json!({"range": "A1", "values": rows})).unwrap();
+    s.execute("sheet.activate", json!({"sheet": "Sheet1"})).unwrap();
+
+    let page = s.execute("sheet.read", json!({"sheet": "My Data", "maxCells": 7})).unwrap();
+    assert_eq!(page["range"], "A1:C2");
+    assert_eq!(page["values"], json!([[1.0, 10.0, "r1"], [2.0, 20.0, "r2"]]));
+    assert_eq!((page["truncated"].clone(), page["totalRows"].clone(), page["next"].clone()), (json!(true), json!(10), json!("'My Data'!A3:C10")));
+    // `next` names the sheet, so it reads on from there whatever the active sheet is.
+    let rest = s.execute("sheet.read", json!({"range": page["next"], "maxCells": 1000})).unwrap();
+    assert_eq!((rest["range"].clone(), rest["values"].as_array().map(Vec::len)), (json!("A3:C10"), Some(8)));
+    assert!(rest.get("truncated").is_none() && rest.get("next").is_none(), "{rest}");
+    // At least one row per page, even when a row is wider than maxCells.
+    assert_eq!(s.execute("sheet.read", json!({"sheet": 1, "maxCells": 0})).unwrap()["range"], "A1:C1");
+    let one_row = s.execute("sheet.read", json!({"range": "'My Data'!A1:C1", "maxCells": 2})).unwrap();
+    assert_eq!((one_row["range"].clone(), one_row.get("next")), (json!("A1:C1"), None));
+    // Without maxCells the whole range comes back as before.
+    let all = s.execute("sheet.read", json!({"sheet": "My Data"})).unwrap();
+    assert_eq!((all["range"].clone(), all.get("truncated")), (json!("A1:C10"), None));
+}
+
 #[test]
 fn row_height_and_column_width_take_a_list_of_areas() {
     // Issue #341: header drags on a multi-area selection size every selected line in one step.
