@@ -896,11 +896,61 @@ fn inserting_many_rows_under_a_wide_formatted_row_stays_bounded() {
     let sh = s.doc().unwrap().wb.active().unwrap();
     assert_eq!(sh.style_id(CellRef::parse("XFC11").unwrap()), filled);
     assert_eq!(sh.cells.len(), 16_383 * 11);
-    s.execute("home.insertRows", json!({"rows": "12:1011"})).unwrap();
+    let result = s.execute("home.insertRows", json!({"rows": "12:1011"})).unwrap();
+    assert_eq!(result["formattingSkipped"], true);
+    assert_eq!(result["formattingCellLimit"], 1_000_000);
     assert_eq!(s.doc().unwrap().wb.active().unwrap().cells.len(), 16_383 * 11);
     s.execute("edit.undo", json!({})).unwrap();
     s.execute("edit.undo", json!({})).unwrap();
     assert_eq!(s.doc().unwrap().wb.active().unwrap().cells.len(), 16_383);
+}
+
+#[test]
+fn insert_format_cap_counts_only_styles_not_already_inherited() {
+    for columns in [false, true] {
+        let mut s = s();
+        let wb = std::sync::Arc::make_mut(&mut s.doc_mut().unwrap().wb);
+        let base = wb.styles.derive(gridcraft_model::StyleId::DEFAULT, |st| st.font.bold = true);
+        let different = wb.styles.derive(base, |st| st.font.italic = true);
+        let sh = wb.sheet_mut(0).unwrap();
+        let map = if columns { &mut sh.cols } else { &mut sh.rows };
+        map.insert(0, gridcraft_model::LineInfo { style: Some(base), ..Default::default() });
+        for k in 0..16_383 {
+            let c = if columns { CellRef::new(k, 0) } else { CellRef::new(0, k) };
+            sh.set_style(c, if k == 0 { different } else { base });
+        }
+        let (command, params) =
+            if columns { ("home.insertColumns", json!({"cols": "B:ALM"})) } else { ("home.insertRows", json!({"rows": "2:1001"})) };
+        let result = s.execute(command, params).unwrap();
+        assert!(result.is_null(), "only 1,000 cells need a stored style: {result}");
+        let sh = s.doc().unwrap().wb.active().unwrap();
+        let c = if columns { CellRef::new(0, 1000) } else { CellRef::new(1000, 0) };
+        assert_eq!(sh.style_id(c), different);
+        assert_eq!(sh.cells.len(), 16_383 + 1_000);
+        s.execute("edit.undo", json!({})).unwrap();
+        assert_eq!(s.doc().unwrap().wb.active().unwrap().cells.len(), 16_383);
+    }
+}
+
+#[test]
+fn inserted_cells_report_when_formatting_exceeds_the_storage_cap() {
+    for right in [false, true] {
+        let mut s = s();
+        let wb = std::sync::Arc::make_mut(&mut s.doc_mut().unwrap().wb);
+        let style = wb.styles.derive(gridcraft_model::StyleId::DEFAULT, |st| st.font.bold = true);
+        let sh = wb.sheet_mut(0).unwrap();
+        let map = if right { &mut sh.cols } else { &mut sh.rows };
+        map.insert(0, gridcraft_model::LineInfo { style: Some(style), ..Default::default() });
+        let result = s
+            .execute(
+                "home.insertCells",
+                if right { json!({"range": "B1:ALM1001", "shift": "right"}) } else { json!({"range": "A2:ALM1002", "shift": "down"}) },
+            )
+            .unwrap();
+        assert_eq!(result["formattingSkipped"], true);
+        assert_eq!(result["formattingCellLimit"], 1_000_000);
+        assert_eq!(s.doc().unwrap().wb.active().unwrap().cells.len(), 0);
+    }
 }
 
 #[test]
