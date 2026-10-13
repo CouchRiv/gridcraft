@@ -17,8 +17,10 @@ impl ToolResult {
     pub fn text(t: impl Into<String>) -> Self {
         Self { content: vec![json!({"type": "text", "text": t.into()})], is_error: false }
     }
+    /// A JSON result as compact text: indenting put every cell of a `read_range` on its own line
+    /// and about doubled the size of a reply an agent has to read.
     pub fn json(v: &Value) -> Self {
-        Self::text(serde_json::to_string_pretty(v).unwrap_or_default())
+        Self::text(serde_json::to_string(v).unwrap_or_default())
     }
     pub fn error(t: impl Into<String>) -> Self {
         Self { content: vec![json!({"type": "text", "text": t.into()})], is_error: true }

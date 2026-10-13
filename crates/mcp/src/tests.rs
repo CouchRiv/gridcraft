@@ -234,6 +234,16 @@ fn read_range_pages_long_ranges() {
     assert_eq!((all["range"].clone(), all.get("next")), (json!("A1:C2000"), None));
 }
 
+/// Tool results are compact JSON: indented, every cell of a range read took a line of its own.
+#[test]
+fn tool_results_are_compact_json() {
+    let mut s = server();
+    ok(&mut s, "write_range", json!({"range": "A1", "values": [[1, "a"], [2, "b"]]}));
+    let text = text_of(&call(&mut s, "read_range", json!({"range": "A1:B2"})));
+    assert!(!text.contains('\n'), "{text}");
+    assert_eq!(serde_json::from_str::<Value>(&text).unwrap()["values"], json!([[1.0, "a"], [2.0, "b"]]));
+}
+
 #[test]
 fn sort_and_filter() {
     let mut s = server();

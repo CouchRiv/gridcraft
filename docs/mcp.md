@@ -57,7 +57,7 @@ with a file open.
 | `screenshot` | `path` | PNG of the window (Remote only). |
 | `list_functions` | `search?`, `category?` | Worksheet functions with signatures. |
 
-Results are one text block holding pretty JSON; failures set `isError: true` with a readable message. Unknown tools,
+Results are one text block holding compact JSON (one line); failures set `isError: true` with a readable message. Unknown tools,
 missing required arguments and wrong argument types are JSON-RPC `-32602` errors; malformed JSON is `-32700`; unknown
 methods `-32601`.
 
