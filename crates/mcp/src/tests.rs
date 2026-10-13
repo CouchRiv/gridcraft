@@ -234,6 +234,27 @@ fn read_range_pages_long_ranges() {
     assert_eq!((all["range"].clone(), all.get("next")), (json!("A1:C2000"), None));
 }
 
+#[test]
+fn read_range_rejects_invalid_max_cells() {
+    let mut s = server();
+    let rows: Vec<Value> = (1..=2000).map(|i| json!([i, i * 2, "x"])).collect();
+    ok(&mut s, "write_range", json!({"range": "A1", "values": rows}));
+    let page = ok(&mut s, "read_range", json!({}));
+    assert_eq!(page["values"].as_array().map(Vec::len), Some(1666));
+    assert_eq!(page["truncated"], true);
+    for value in [json!(-1), json!(0), json!(-10)] {
+        let error = fails(&mut s, "read_range", json!({"maxCells": value}));
+        assert!(error.contains("maxCells must be a positive integer"), "{value}: {error}");
+    }
+    for value in [json!(1.5), json!("5000"), json!(null), json!(true)] {
+        let reply = rpc(&mut s, 99, "tools/call", json!({"name": "read_range", "arguments": {"maxCells": value}}));
+        assert_eq!(err_code(&reply), -32602, "{value}: {reply}");
+    }
+    let page = ok(&mut s, "read_range", json!({"maxCells": 1}));
+    assert_eq!(page["range"], "A1:C1");
+    assert_eq!(page["truncated"], true);
+}
+
 /// Tool results are compact JSON: indented, every cell of a range read took a line of its own.
 #[test]
 fn tool_results_are_compact_json() {

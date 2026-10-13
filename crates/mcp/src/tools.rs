@@ -162,7 +162,7 @@ pub fn tool_definitions() -> Vec<Value> {
                     "sheet": string("Sheet name (default: the active sheet)"),
                     "formulas": boolean("Return formulas instead of computed values for formula cells"),
                     "formatted": boolean("Return display text with number formats applied"),
-                    "maxCells": int("Most cells per call, in whole rows (default 5000)"),
+                    "maxCells": {"type": "integer", "minimum": 1, "description": "Most cells per call, a positive integer, in whole rows (default 5000)"},
                 }),
                 &[],
             ),

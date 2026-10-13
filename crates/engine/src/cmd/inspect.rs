@@ -8,7 +8,7 @@ use super::*;
 pub fn specs() -> Vec<CommandSpec> {
     vec![
         cmd!(query "document.inspect", "Inspect Workbook", [], None, "{} → sheets, selection, names, tables, charts, dirty, history", has_doc, inspect),
-        cmd!(query "sheet.read", "Read Range", [], None, "{range?: \"A1:D10\" (default: used range), sheet?, formulas?: bool, formatted?: bool, maxCells?: whole rows up to this many cells} → rows of values; a cut range adds truncated: true, totalRows and next (the range of the remaining rows)", has_doc, read),
+        cmd!(query "sheet.read", "Read Range", [], None, "{range?: \"A1:D10\" (default: used range), sheet?, formulas?: bool, formatted?: bool, maxCells?: positive integer, whole rows up to this many cells} → rows of values; a cut range adds truncated: true, totalRows and next (the range of the remaining rows)", has_doc, read),
         cmd!(query "cell.get", "Get Cell", [], None, "{cell?, sheet?} → value, formula, display text, style, comment, link", has_doc, cell_get),
         cmd!(query "selection.stats", "Selection Statistics", [], None, "{} → count, sum, average, min, max", has_doc, sel_stats),
         cmd!(query "history.list", "Undo History", [], None, "{} → undo/redo labels", has_doc, history),
@@ -77,6 +77,9 @@ fn inspect(s: &mut Session, _: &Json) -> Result<Json> {
 }
 
 fn read(s: &mut Session, p: &Json) -> Result<Json> {
+    if p.get("maxCells").is_some_and(|v| v.as_u64().is_none_or(|n| n == 0)) {
+        return Err(bad("sheet.read", "maxCells must be a positive integer"));
+    }
     let sheet = target_sheet(s, p)?;
     let d = s.doc()?;
     let sh = d.wb.sheet(sheet).ok_or(EngineError::NoDocument)?;

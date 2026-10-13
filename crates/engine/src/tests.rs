@@ -2631,12 +2631,22 @@ fn reading_a_range_in_pages() {
     assert_eq!((rest["range"].clone(), rest["values"].as_array().map(Vec::len)), (json!("A3:C10"), Some(8)));
     assert!(rest.get("truncated").is_none() && rest.get("next").is_none(), "{rest}");
     // At least one row per page, even when a row is wider than maxCells.
-    assert_eq!(s.execute("sheet.read", json!({"sheet": 1, "maxCells": 0})).unwrap()["range"], "A1:C1");
+    assert_eq!(s.execute("sheet.read", json!({"sheet": 1, "maxCells": 1})).unwrap()["range"], "A1:C1");
     let one_row = s.execute("sheet.read", json!({"range": "'My Data'!A1:C1", "maxCells": 2})).unwrap();
     assert_eq!((one_row["range"].clone(), one_row.get("next")), (json!("A1:C1"), None));
     // Without maxCells the whole range comes back as before.
     let all = s.execute("sheet.read", json!({"sheet": "My Data"})).unwrap();
     assert_eq!((all["range"].clone(), all.get("truncated")), (json!("A1:C10"), None));
+}
+
+#[test]
+fn sheet_read_rejects_invalid_max_cells() {
+    let mut s = s();
+    for value in [json!(-1), json!(0), json!(-10), json!(1.5), json!("5000"), json!(null), json!(true)] {
+        // Validate even an empty sheet, before the early return for an unused range.
+        let error = s.execute("sheet.read", json!({"maxCells": value})).unwrap_err();
+        assert!(error.to_string().contains("maxCells must be a positive integer"), "{value}: {error}");
+    }
 }
 
 #[test]
