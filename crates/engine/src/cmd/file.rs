@@ -104,16 +104,42 @@ fn save(s: &mut Session, p: &Json) -> Result<Json> {
     if std::path::Path::new(&path).extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("pdf")) {
         return super::print::export_pdf(s, &json!({"path": path}));
     }
+    let user = s.prefs.user_name.clone();
     let d = s.doc_mut()?;
-    let bytes = crate::io::save_bytes(&d.wb, &path)?;
-    crate::io::write_file(&path, &bytes)?;
     let kind = crate::io::FileKind::from_path(&path).unwrap_or(crate::io::FileKind::Xlsx);
     // Only a full-fidelity format clears the dirty flag and becomes the document's file.
-    if matches!(kind, crate::io::FileKind::Xlsx | crate::io::FileKind::Json) {
+    let full_fidelity = matches!(kind, crate::io::FileKind::Xlsx | crate::io::FileKind::Json);
+    let wb = if full_fidelity {
+        let mut wb = (*d.wb).clone();
+        stamp_save(&mut wb.props, &user, d.calc.fixed_now.unwrap_or_else(gridcraft_calc::now_serial));
+        std::sync::Arc::new(wb)
+    } else {
+        d.wb.clone()
+    };
+    let bytes = crate::io::save_bytes(&wb, &path)?;
+    crate::io::write_file(&path, &bytes)?;
+    if full_fidelity {
+        d.wb = wb;
         d.saved = d.wb.clone();
         d.path = Some(path.clone());
     }
     Ok(json!({"path": path, "bytes": bytes.len()}))
+}
+
+/// What Excel records when it saves a workbook: the time (`modified`, and `created` the first
+/// time) and who saved it (`lastModifiedBy`: the user name new comments are signed with). `now` is
+/// a 1900-system serial in UTC; the dates are written as W3CDTF (`2026-10-12T14:05:09Z`).
+fn stamp_save(props: &mut gridcraft_model::DocProps, user: &str, now: f64) {
+    if let Some(t) = gridcraft_core::date::datetime_from_serial(gridcraft_core::DateSystem::D1900, now) {
+        let w3c = format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z", t.year, t.month, t.day, t.hour, t.minute, t.second);
+        if props.created.is_empty() {
+            props.created = w3c.clone();
+        }
+        props.modified = w3c;
+    }
+    if !user.is_empty() {
+        props.last_modified_by = user.to_string();
+    }
 }
 
 fn save_as(s: &mut Session, p: &Json) -> Result<Json> {
