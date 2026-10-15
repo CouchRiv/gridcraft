@@ -243,12 +243,18 @@ fn note_once(app: &mut SheetApp, s: &Snapshot) {
     let Some(open) = app.ask_agent.open.as_mut().filter(|o| !o.commented) else { return };
     open.commented = true;
     let (Some(answer), Some(name)) = (s.answer.clone(), s.agent.clone()) else { return };
-    let (sheet, cell) = (open.sheet.clone(), open.range.start.a1());
+    let (sheet, at) = (open.sheet.clone(), open.range.start);
+    let cell = at.a1();
+    let text = format!("You: {}\n\nAgent ({name}): {answer}", open.asked);
     let depth = app.session.active().map_or(0, |d| d.undo.len());
     let from = *open.edited_from.get_or_insert(depth);
-    let params = json!({"sheet": sheet, "cell": cell, "text": answer, "author": format!("Agent ({name})")});
+    let existing = app
+        .session
+        .active()
+        .is_some_and(|d| d.wb.sheet_index(&sheet).and_then(|index| d.wb.sheet(index)).is_some_and(|sh| sh.comments.contains_key(&at)));
+    let params = json!({"sheet": sheet, "cell": cell, "text": text, "author": format!("Agent ({name})")});
     app.ask_agent.agent_turn = true;
-    let _ = app.session.run("review.newComment", params);
+    let _ = app.session.run(if existing { "review.replyComment" } else { "review.newComment" }, params);
     app.ask_agent.agent_turn = false;
     if let Some(d) = app.session.active_mut()
         && d.undo.len() > from + 1
@@ -279,7 +285,8 @@ pub fn show(app: &mut SheetApp, ctx: &egui::Context) {
         note_once(app, s);
     }
     let agents = hub.agents();
-    let view = ui::View { snapshot: snapshot.as_ref(), agents: &agents, actions: QUICK_ACTIONS };
+    let (history, instruction) = app.ask_agent.open.as_ref().map(|open| (open.turns.clone(), open.asked.clone())).unwrap_or_default();
+    let view = ui::View { snapshot: snapshot.as_ref(), agents: &agents, actions: QUICK_ACTIONS, history: &history, instruction: &instruction };
     match ui::bubble(ctx, anchor, &view, &mut app.ask_agent.draft, &mut app.ask_agent.picked) {
         Some(Action::Send(text)) => ask(app, text),
         Some(Action::Undo) => {
@@ -295,5 +302,38 @@ pub fn show(app: &mut SheetApp, ctx: &egui::Context) {
         }
         Some(Action::Keep | Action::Close) => close(app),
         None => {}
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[test]
+    fn comments_keep_both_instructions_and_answers() {
+        let hub = AgentHub::default();
+        let mut session = gridcraft_engine::Session::new();
+        session.new_workbook();
+        let mut app = SheetApp::new(session, Default::default()).with_agent_hub(hub.clone());
+        command(&mut app, &json!({"instruction": "Clean these cells"})).unwrap();
+        let first = hub.listen(1, Some("Codex"), Duration::ZERO, || true).unwrap();
+        hub.reply(1, first.id, "Cleaned", true, None).unwrap();
+        note_once(&mut app, &hub.snapshot(first.id).unwrap());
+        ask(&mut app, "Add a total".into());
+        let next = hub.listen(1, Some("Codex"), Duration::ZERO, || true).unwrap();
+        hub.reply(1, next.id, "Total added", true, None).unwrap();
+        note_once(&mut app, &hub.snapshot(next.id).unwrap());
+        note_once(&mut app, &hub.snapshot(next.id).unwrap());
+        let sheet = app.session.active().unwrap().wb.active().unwrap();
+        let comment = sheet.comments.values().next().unwrap();
+        assert_eq!(comment.text, "You: Clean these cells\n\nAgent (Codex): Cleaned");
+        assert_eq!(comment.replies.len(), 1);
+        assert_eq!(comment.replies[0].0, "Agent (Codex)");
+        assert_eq!(comment.replies[0].1, "You: Add a total\n\nAgent (Codex): Total added");
+        close(&mut app);
+        app.run("edit.undo", json!({})).unwrap();
+        assert!(app.session.active().unwrap().wb.active().unwrap().comments.is_empty());
     }
 }
