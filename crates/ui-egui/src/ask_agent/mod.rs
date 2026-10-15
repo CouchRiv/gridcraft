@@ -13,6 +13,40 @@ use serde_json::{Value, json};
 pub use hub::{AgentHub, HubError, Request, Snapshot, Status, Turn};
 pub use ui::Action;
 
+/// Editable starting points for requests to the connected agent.
+const QUICK_ACTIONS: &[ui::QuickAction] = &[
+    ui::QuickAction {
+        label: "Clean up cells",
+        group: "",
+        instruction: "Clean up the selected cells: trim unnecessary spaces and make text capitalization consistent. Preserve numbers and formulas.",
+    },
+    ui::QuickAction {
+        label: "Create formula",
+        group: "",
+        instruction: "Create a formula for the selected cells. Explain any assumptions and ask if the intended calculation is unclear.",
+    },
+    ui::QuickAction {
+        label: "Explain formula",
+        group: "",
+        instruction: "Explain the formulas in the selected cells, including their references and results. Do not change the cells.",
+    },
+    ui::QuickAction {
+        label: "Summarize selection",
+        group: "",
+        instruction: "Summarize the selected cells and highlight the key values or patterns. Do not change the cells.",
+    },
+    ui::QuickAction {
+        label: "Readable table",
+        group: "Format",
+        instruction: "Format the selected cells as a readable table with clear headings and appropriate number formats. Preserve values and formulas.",
+    },
+    ui::QuickAction {
+        label: "Highlight outliers",
+        group: "Format",
+        instruction: "Identify outliers in the selected numeric cells, explain the rule used, and highlight them without changing values.",
+    },
+];
+
 use crate::SheetApp;
 
 /// The open bubble: its current request, the thread of earlier turns, and the cells it is about.
@@ -245,7 +279,7 @@ pub fn show(app: &mut SheetApp, ctx: &egui::Context) {
         note_once(app, s);
     }
     let agents = hub.agents();
-    let view = ui::View { snapshot: snapshot.as_ref(), agents: &agents };
+    let view = ui::View { snapshot: snapshot.as_ref(), agents: &agents, actions: QUICK_ACTIONS };
     match ui::bubble(ctx, anchor, &view, &mut app.ask_agent.draft, &mut app.ask_agent.picked) {
         Some(Action::Send(text)) => ask(app, text),
         Some(Action::Undo) => {
