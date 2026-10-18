@@ -38,7 +38,7 @@ pub struct Remote {
     token: String,
     conn: Option<(BufReader<TcpStream>, TcpStream)>,
     next_id: u64,
-    request: Option<u64>,
+    pub(crate) request: Option<u64>,
 }
 
 impl Remote {
@@ -140,6 +140,7 @@ impl Backend for Remote {
                 // A request-bound write may already have run. Never replay it on a fresh
                 // connection (which does not own that request).
                 self.conn = None;
+                self.request = None;
                 return Err(format!("Ask Agent connection lost; the command was not retried: {e}. Reconnect and ask again."));
             }
             Err(_) => {
@@ -154,9 +155,7 @@ impl Backend for Remote {
         if v.get("ok").and_then(Value::as_bool) == Some(true) {
             let result = v.get("result").cloned().unwrap_or(Value::Null);
             if method == "agent.listen" {
-                if let Some(request) = result.get("id").and_then(Value::as_u64) {
-                    self.request = Some(request);
-                }
+                self.request = result.get("id").and_then(Value::as_u64);
             } else if method == "agent.reply"
                 && (result["done"] == true || result["cancelled"] == true)
                 && result.get("id").and_then(Value::as_u64) == self.request
@@ -165,11 +164,11 @@ impl Backend for Remote {
             }
             Ok(result)
         } else {
-            Err(format!(
-                "{}: {}",
-                v.get("errorCode").and_then(Value::as_str).unwrap_or("APPLY_FAILED"),
-                v.get("error").and_then(Value::as_str).unwrap_or("unknown error")
-            ))
+            let code = v.get("errorCode").and_then(Value::as_str).unwrap_or("APPLY_FAILED");
+            if matches!(code, "NO_REQUEST" | "NOT_OWNER" | "READ_ONLY_REQUEST") {
+                self.request = None;
+            }
+            Err(format!("{}: {}", code, v.get("error").and_then(Value::as_str).unwrap_or("unknown error")))
         }
     }
 

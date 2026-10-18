@@ -677,8 +677,56 @@ fn lost_request_bound_reply_is_not_replayed_on_a_new_connection() {
     });
     let mut remote = Remote::connect_with_token(&addr, "synthetic-token-for-test".into()).unwrap();
     remote.call("agent.listen", json!({"timeoutMs":0})).unwrap();
+    assert_eq!(remote.request, Some(17));
     let error = remote.call("engine.execute", json!({"command":"cell.set","params":{"cell":"A1","input":"7"}})).unwrap_err();
     assert!(error.contains("not retried"), "{error}");
+    assert_eq!(remote.request, None);
+    peer.join().unwrap();
+}
+
+#[test]
+fn remote_clears_stale_request_on_empty_listen_or_error() {
+    use std::net::TcpListener;
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap().to_string();
+    let peer = std::thread::spawn(move || {
+        let (stream, _) = listener.accept().unwrap();
+        let mut writer = stream.try_clone().unwrap();
+        let mut reader = BufReader::new(stream);
+        let mut line = String::new();
+        reader.read_line(&mut line).unwrap();
+        writer.write_all(b"{\"id\":0,\"ok\":true}\n").unwrap();
+
+        line.clear();
+        reader.read_line(&mut line).unwrap();
+        let req: Value = serde_json::from_str(&line).unwrap();
+        writer.write_all(format!("{}\n", json!({"id":req["id"],"ok":true,"result":{"id":42}})).as_bytes()).unwrap();
+
+        line.clear();
+        reader.read_line(&mut line).unwrap();
+        let req: Value = serde_json::from_str(&line).unwrap();
+        writer.write_all(format!("{}\n", json!({"id":req["id"],"ok":true,"result":{"none":true}})).as_bytes()).unwrap();
+
+        line.clear();
+        reader.read_line(&mut line).unwrap();
+        let req: Value = serde_json::from_str(&line).unwrap();
+        writer.write_all(format!("{}\n", json!({"id":req["id"],"ok":true,"result":{"id":43}})).as_bytes()).unwrap();
+
+        line.clear();
+        reader.read_line(&mut line).unwrap();
+        let req: Value = serde_json::from_str(&line).unwrap();
+        writer.write_all(format!("{}\n", json!({"id":req["id"],"ok":false,"errorCode":"NO_REQUEST","error":"no request"})).as_bytes()).unwrap();
+    });
+    let mut remote = Remote::connect_with_token(&addr, "synthetic-token-for-test".into()).unwrap();
+    remote.call("agent.listen", json!({"timeoutMs":0})).unwrap();
+    assert_eq!(remote.request, Some(42));
+    remote.call("agent.listen", json!({"timeoutMs":0})).unwrap();
+    assert_eq!(remote.request, None);
+    remote.call("agent.listen", json!({"timeoutMs":0})).unwrap();
+    assert_eq!(remote.request, Some(43));
+    let err = remote.call("engine.execute", json!({"command":"cell.set","params":{"cell":"A1","input":"7"}})).unwrap_err();
+    assert!(err.contains("NO_REQUEST"), "{err}");
+    assert_eq!(remote.request, None);
     peer.join().unwrap();
 }
 

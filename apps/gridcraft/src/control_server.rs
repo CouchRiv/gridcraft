@@ -172,10 +172,10 @@ fn is_http_request_line(text: &str) -> bool {
 fn serve(stream: TcpStream, token: Option<&str>, tx: Sender<ControlRequest>, ctx: egui::Context, agents: &AgentHub) {
     let (Ok(read), Ok(probe)) = (stream.try_clone(), stream.try_clone()) else { return };
     let (mut out, mut reader) = (stream, BufReader::new(read));
-    if let Some(token) = token {
-        if !authenticate(&mut reader, &mut out, token) {
-            return;
-        }
+    if let Some(token) = token
+        && !authenticate(&mut reader, &mut out, token)
+    {
+        return;
     }
     let conn = next_connection();
     let _leaving = Leaving(agents, conn);
@@ -194,7 +194,7 @@ fn serve(stream: TcpStream, token: Option<&str>, tx: Sender<ControlRequest>, ctx
                     // Ask Agent: answered here, on the connection's own thread.
                     if let Some(mut reply) = agents.handle(conn, &method, &params, || peer_open(&probe)) {
                         match (method.as_str(), reply["result"]["id"].as_u64()) {
-                            ("agent.listen", Some(taken)) => request = Some(taken),
+                            ("agent.listen", taken) => request = taken,
                             ("agent.reply", Some(done)) if reply["result"]["done"] == true && Some(done) == request => request = None,
                             _ => {}
                         }
@@ -237,6 +237,9 @@ fn serve(stream: TcpStream, token: Option<&str>, tx: Sender<ControlRequest>, ctx
                         || command.starts_with("file.")
                         || method.starts_with("app.");
                     if is_write && let Err(e) = agents.may_edit(conn, request_id) {
+                        if matches!(e.code, "NO_REQUEST" | "NOT_OWNER" | "READ_ONLY_REQUEST") && request == request_id {
+                            request = None;
+                        }
                         let _ = writeln!(out, "{}", json!({"id": id, "ok": false, "error": e.message, "errorCode": e.code}));
                         continue;
                     }

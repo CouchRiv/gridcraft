@@ -213,7 +213,7 @@ pub fn handle(app: &mut SheetApp, ctx: &egui::Context, method: &str, p: &Json) -
                 ("app.language.set", "Interface Language", "{language: \"en\"|\"zh\"|\"ja\"|\"ko\"|\"ru\"|\"pt\"|\"de\"|\"cs\"} (alias: code)"),
                 ("app.language.english", "Interface Language: English", ""),
                 ("app.language.japanese", "Interface Language: Japanese", ""),
-                ("ui.askAgent", "Ask Agent", "{} opens bubble; {instruction: text} queues request; {cancel: id}; {close: true}"),
+                ("ui.askAgent", "Ask Agent", "{} opens bubble; {instruction: text} queues request; {close: true}"),
             ] {
                 v.push(json!({"id": id, "label": label, "params": params, "enabled": true, "ui": true}));
             }

@@ -10,7 +10,7 @@ use gridcraft_engine::core::{CellRef, RangeRef};
 use gridcraft_engine::model::{Sheet, Workbook};
 use serde_json::{Value, json};
 
-pub use hub::{AgentHub, HubError, Request, Snapshot, Status, Turn};
+pub use hub::{AgentHub, HELD, HubError, INVALID_PARAMS, NO_REQUEST, NOT_OWNER, READ_ONLY_REQUEST, Request, Snapshot, Status, Turn};
 pub use ui::Action;
 
 /// Editable starting points for requests to the connected agent.
