@@ -175,18 +175,24 @@ pub fn held_ranges(app: &SheetApp) -> Vec<(String, RangeRef, [u8; 3])> {
     hub.held().into_iter().filter_map(|(sel, name)| range(&sel).map(|(sheet, r)| (sheet, r, hub::colour(&name)))).collect()
 }
 
-/// Why the person may not run `command` now: it would change cells an agent is working on.
-pub fn held(app: &SheetApp, command: &str) -> Option<String> {
+/// Why the person may not run `command` targeting `target` now: it would change cells an agent is working on.
+pub fn held_for(app: &SheetApp, command: &str, target: Option<RangeRef>) -> Option<String> {
     let hub = app.ask_agent.hub.as_ref().filter(|_| !app.ask_agent.agent_turn)?;
     if is_query_method(command) || gridcraft_engine::find_command(command).is_none() || command.starts_with("select") {
         return None;
     }
     let d = app.session.active()?;
-    let (sheet, mine) = (d.wb.active()?.name.clone(), d.selection.current());
+    let sheet = d.wb.active()?.name.clone();
+    let mine = target.unwrap_or_else(|| d.selection.current());
     hub.held().into_iter().find_map(|(sel, name)| {
         let theirs = RangeRef::parse(sel["range"].as_str()?)?;
         (sel["sheet"].as_str() == Some(sheet.as_str()) && theirs.intersection(&mine).is_some()).then(|| format!("Held by Agent ({name})"))
     })
+}
+
+/// Why the person may not run `command` now: it would change cells an agent is working on.
+pub fn held(app: &SheetApp, command: &str) -> Option<String> {
+    held_for(app, command, None)
 }
 
 fn ask(app: &mut SheetApp, instruction: String) {

@@ -63,6 +63,15 @@ fn bubble_flow_send_reply_followup_undo_refusal_and_keep() {
     h.run_steps(2);
     assert!(h.query_by_label_contains("Scanning...").is_some());
     assert!(h.state_mut().run("cell.set", json!({"cell": "B3", "input": "x"})).unwrap_err().contains("Held by Agent (editor)"));
+    // Explicit target blocked even when current selection is outside the held range:
+    h.state_mut().run("selection.set", json!({"cell": "Z1"})).unwrap();
+    assert!(h.state_mut().run("cell.set", json!({"cell": "B3", "input": "x"})).unwrap_err().contains("Held by Agent (editor)"));
+    // In-cell typing is blocked by the hold as well:
+    h.state_mut().run("selection.set", json!({"cell": "B3"})).unwrap();
+    h.state_mut().begin_edit(Some("typed".into()), false);
+    assert!(!h.state_mut().commit_edit(0, 0, false, false));
+    assert!(h.state().toast.as_ref().unwrap().0.contains("Held by Agent (editor)"));
+    h.state_mut().cancel_edit();
     ask_agent::run_for(h.state_mut(), conn, r.id, "cell.set", json!({"cell": "B3", "input": "north"})).unwrap();
     hub.reply(conn, r.id, "Cleaned row 3", true, None).unwrap();
     h.run_steps(2);

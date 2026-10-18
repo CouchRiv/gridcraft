@@ -36,7 +36,7 @@ fn common_schemas_and_compact_validation_match() {
     let reply = &defs.iter().find(|d| d["name"] == "reply_to_request").unwrap()["inputSchema"];
     assert_eq!(reply["required"], json!(["id"]));
     assert_eq!(reply["properties"]["id"]["maximum"], 9_007_199_254_740_991_u64);
-    assert_eq!(reply["anyOf"].as_array().unwrap().len(), 3);
+    assert_eq!(reply["anyOf"].as_array().unwrap().len(), 2);
     for (name, args) in [
         ("wait_for_request", json!({"timeout_s":-1})),
         ("wait_for_request", json!({"timeoutMs":0})),
@@ -45,11 +45,12 @@ fn common_schemas_and_compact_validation_match() {
         ("reply_to_request", json!({"id":1,"error":" ","done":true})),
         ("reply_to_request", json!({"id":1,"proposal":"x","error":"bad"})),
         ("reply_to_request", json!({"id":1,"comment":"early","text":"x","done":false})),
+        ("reply_to_request", json!({"id":1,"error":"bad","done":false})),
     ] {
         assert_eq!(rpc(&mut server, name, args.clone())["error"]["code"], -32602);
         assert_eq!(rpc(&mut server, "tool_call", json!({"name":name,"arguments":args}))["error"]["code"], -32602);
     }
-    for args in [json!({"id":1,"proposal":""}), json!({"id":1,"error":"failed"})] {
+    for args in [json!({"id":1,"text":"done"}), json!({"id":1,"error":"failed"})] {
         let r = rpc(&mut server, "reply_to_request", args);
         assert!(r.get("error").is_none());
         let e: Value = serde_json::from_str(r["result"]["content"][0]["text"].as_str().unwrap()).unwrap();
