@@ -29,6 +29,7 @@ pub(crate) fn read_timeout(method: &str, params: &Value) -> Duration {
     let ms = params.get("timeoutMs").and_then(Value::as_f64).filter(|ms| ms.is_finite() && *ms >= 0.0).unwrap_or(30_000.0).min(60_000.0);
     IO_TIMEOUT + Duration::from_millis(ms as u64)
 }
+
 /// Longest reply line accepted from the app (guards against a runaway peer).
 const MAX_REPLY: u64 = 256 * 1024 * 1024;
 
