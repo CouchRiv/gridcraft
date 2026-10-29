@@ -463,6 +463,16 @@ pub(super) fn translate(text: &str) -> Option<&'static str> {
         "Undo all of the agent's edits" => "Opozovi sve izmene agenta",
         "Actions" => "Radnje",
         "Choose a starting instruction, then edit and send" => "Izaberite početnu instrukciju, izmenite i pošaljite",
+        "Macros" => "Makroi",
+        "Record Macro" => "Snimi makro",
+        "Stop Recording" => "Zaustavi snimanje",
+        "Use Relative References" => "Koristi relativne reference",
+        "Run\nMacro" => "Pokreni makro",
+        "Macros…" => "Makroi…",
+        "Recording" => "Snimanje",
+        "Stop" => "Zaustavi",
+        "New Macro" => "Novi makro",
+        "Show" => "Prikaži",
         _ => return None,
     })
 }

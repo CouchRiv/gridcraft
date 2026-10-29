@@ -467,6 +467,16 @@ pub(super) fn translate(text: &str) -> Option<&'static str> {
         "Undo all of the agent's edits" => "Annuler toutes les modifications de l’agent",
         "Actions" => "Actions",
         "Choose a starting instruction, then edit and send" => "Choisir une instruction de départ, puis modifier et envoyer",
+        "Macros" => "Macros",
+        "Record Macro" => "Enregistrer une macro",
+        "Stop Recording" => "Arrêter l’enregistrement",
+        "Use Relative References" => "Utiliser les références relatives",
+        "Run\nMacro" => "Exécuter la macro",
+        "Macros…" => "Macros…",
+        "Recording" => "Enregistrement",
+        "Stop" => "Arrêter",
+        "New Macro" => "Nouvelle macro",
+        "Show" => "Afficher",
         _ => return None,
     })
 }

@@ -479,6 +479,16 @@ pub(super) fn translate(text: &str) -> Option<&'static str> {
         "Undo all of the agent's edits" => "Alle Änderungen des Agenten rückgängig machen",
         "Actions" => "Aktionen",
         "Choose a starting instruction, then edit and send" => "Eine Startanweisung wählen, bearbeiten und senden",
+        "Macros" => "Makros",
+        "Record Macro" => "Makro aufzeichnen",
+        "Stop Recording" => "Aufzeichnung beenden",
+        "Use Relative References" => "Relative Verweise verwenden",
+        "Run\nMacro" => "Makro ausführen",
+        "Macros…" => "Makros…",
+        "Recording" => "Aufzeichnung",
+        "Stop" => "Beenden",
+        "New Macro" => "Neues Makro",
+        "Show" => "Anzeigen",
         _ => return None,
     })
 }

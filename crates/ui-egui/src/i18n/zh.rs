@@ -455,6 +455,16 @@ pub(super) fn translate(text: &str) -> Option<&'static str> {
         "Undo all of the agent's edits" => "撤消智能体的所有编辑",
         "Actions" => "操作",
         "Choose a starting instruction, then edit and send" => "选择初始指令，编辑后发送",
+        "Macros" => "宏",
+        "Record Macro" => "录制宏",
+        "Stop Recording" => "停止录制",
+        "Use Relative References" => "使用相对引用",
+        "Run\nMacro" => "运行宏",
+        "Macros…" => "宏…",
+        "Recording" => "正在录制",
+        "Stop" => "停止",
+        "New Macro" => "新建宏",
+        "Show" => "显示",
         _ => return None,
     })
 }
