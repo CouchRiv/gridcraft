@@ -28,6 +28,8 @@ fn sample() -> Workbook {
         subject: "S".into(),
         author: "Me".into(),
         company: "Co".into(),
+        manager: "Lead".into(),
+        hyperlink_base: "https://example.invalid/base/".into(),
         keywords: "k".into(),
         description: "d".into(),
         last_modified_by: "You".into(),
@@ -1299,6 +1301,36 @@ fn core_properties_survive_save() {
     // A second open and save writes the same part.
     let (again, _) = read_xlsx(&saved).unwrap();
     assert_eq!(written_core(&write_xlsx(&again).unwrap()), xml);
+}
+
+/// Excel keeps these three extended properties; begin with handwritten package XML so the
+/// test catches a reader and writer that both omit the same property.
+#[test]
+fn extended_properties_survive_save() {
+    let root_rels = r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/></Relationships>"#;
+    let app = r#"<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Manager> Lead &amp; Team </Manager><Company>ACME &lt;Co&gt;</Company><HyperlinkBase>https://example.invalid/a?x=1&amp;y=2</HyperlinkBase></Properties>"#;
+    let book = r#"<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"/>"#;
+    let source = super::make_zip(&[
+        ("[Content_Types].xml", super::CT.as_bytes()),
+        ("_rels/.rels", root_rels.as_bytes()),
+        ("xl/workbook.xml", book.as_bytes()),
+        ("docProps/app.xml", app.as_bytes()),
+    ]);
+    let (mut wb, _) = read_xlsx(&source).unwrap();
+    for _ in 0..2 {
+        assert_eq!(wb.props.manager, " Lead & Team ");
+        assert_eq!(wb.props.company, "ACME <Co>");
+        assert_eq!(wb.props.hyperlink_base, "https://example.invalid/a?x=1&y=2");
+        let saved = write_xlsx(&wb).unwrap();
+        let mut package = Package::open(&saved).unwrap();
+        let app = package.read_xml("docProps/app.xml").unwrap().unwrap();
+        for (tag, expected) in
+            [("Manager", wb.props.manager.as_str()), ("Company", wb.props.company.as_str()), ("HyperlinkBase", wb.props.hyperlink_base.as_str())]
+        {
+            assert_eq!(app.child(tag).unwrap().text, expected, "{tag}");
+        }
+        wb = read_xlsx(&saved).unwrap().0;
+    }
 }
 
 /// The workbook's default font (`fonts[0]`, the Normal style's) is what every default-formatted

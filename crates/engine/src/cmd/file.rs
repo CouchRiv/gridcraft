@@ -156,8 +156,8 @@ fn save(s: &mut Session, p: &Json) -> Result<Json> {
     Ok(json!({"path": path, "bytes": bytes.len()}))
 }
 
-/// What Excel records when it saves a workbook: the time (`modified`, and `created` the first
-/// time) and who saved it (`lastModifiedBy`: the user name new comments are signed with). `now` is
+/// Record the save time (`modified`, and `created` the first time) and the configured GridCraft
+/// user name (`lastModifiedBy`). Signed-in Excel uses the Office account display name instead. `now` is
 /// a 1900-system serial in UTC; the dates are written as W3CDTF (`2026-10-12T14:05:09Z`).
 fn stamp_save(props: &mut gridcraft_model::DocProps, user: &str, now: f64) {
     if let Some(t) = gridcraft_core::date::datetime_from_serial(gridcraft_core::DateSystem::D1900, now) {

@@ -396,8 +396,10 @@ pub fn write_xlsx_named(wb: &Workbook, kind: XlsxKind, book_name: Option<&str>) 
     out.part("docProps/core.xml", Some("application/vnd.openxmlformats-package.core-properties+xml"), core.into_bytes());
     let mut app = String::from(XML_DECL);
     app.push_str("<Properties xmlns=\"http://schemas.openxmlformats.org/officeDocument/2006/extended-properties\" xmlns:vt=\"http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes\"><Application>GridCraft</Application>");
-    if !p.company.is_empty() {
-        let _ = write!(app, "<Company>{}</Company>", esc(&p.company));
+    for (tag, value) in [("Manager", &p.manager), ("Company", &p.company), ("HyperlinkBase", &p.hyperlink_base)] {
+        if !value.is_empty() {
+            let _ = write!(app, "<{tag}>{}</{tag}>", esc(value));
+        }
     }
     app.push_str("</Properties>");
     out.part("docProps/app.xml", Some("application/vnd.openxmlformats-officedocument.extended-properties+xml"), app.into_bytes());

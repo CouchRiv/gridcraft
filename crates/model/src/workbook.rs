@@ -87,7 +87,8 @@ pub struct DefinedName {
     pub hidden: bool,
 }
 
-/// Document properties (`docProps/core.xml`, plus `Company` from `docProps/app.xml`). Values are
+/// Document properties (`docProps/core.xml`, plus Manager, Company and HyperlinkBase from
+/// `docProps/app.xml`). Values are
 /// kept as the file stores them; the dates are W3CDTF text such as `2024-01-15T09:30:00Z`.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
@@ -96,6 +97,8 @@ pub struct DocProps {
     pub subject: String,
     pub author: String,
     pub company: String,
+    pub manager: String,
+    pub hyperlink_base: String,
     pub keywords: String,
     pub description: String,
     /// `cp:lastModifiedBy`.
