@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use gridcraft_core::{CellRef, MAX_COLS, MAX_ROWS, RangeRef};
 use gridcraft_formula::adjust::{Axis, Edit};
-use gridcraft_model::{Anchor, AnchorMode, Sheet, Visibility};
+use gridcraft_model::{Anchor, AnchorMode, Sheet, StyleTable, Visibility, Workbook};
 use serde_json::{Value as Json, json};
 
 use super::{
@@ -302,7 +302,9 @@ const MAX_FORMAT_SAME_AS_ABOVE: u64 = 1_000_000;
 /// Only formats: values, formulas, comments, links and merges stay behind. An insert at the first
 /// line has no line before it and keeps its cells unformatted. With `whole_lines` the new lines
 /// already took the row or column format of the line before, so only its stored cells can differ.
-fn format_same_as_before(sh: &mut Sheet, axis: Axis, at: u32, count: u32, (k0, k1): (u32, u32), whole_lines: bool) -> bool {
+fn format_same_as_before(wb: &mut Workbook, sheet: usize, axis: Axis, at: u32, count: u32, (k0, k1): (u32, u32), whole_lines: bool) -> bool {
+    let Workbook { sheets, styles, .. } = wb;
+    let Some(sh) = sheets.get_mut(sheet).map(Arc::make_mut) else { return false };
     let Some(prev) = at.checked_sub(1) else { return false };
     if k0 > k1 || count == 0 {
         return false;
@@ -313,7 +315,8 @@ fn format_same_as_before(sh: &mut Sheet, axis: Axis, at: u32, count: u32, (k0, k
     let line_style = if axis == Axis::Rows { sh.rows.get(&prev) } else { sh.cols.get(&prev) }.and_then(|l| l.style);
     // Where a source cell's format can differ from what the new cell gets from its row and column:
     // where a cell is stored, or (inserted cells only) where a row or column format reaches.
-    let across: Vec<u32> = if !whole_lines && line_style.is_some() {
+    let line_has_borders = line_style.is_some_and(|id| styles.get(id).borders != Default::default());
+    let across: Vec<u32> = if line_style.is_some() && (!whole_lines || line_has_borders) {
         (k0..=k1).collect()
     } else {
         let mut v: Vec<u32> = if axis == Axis::Rows {
@@ -321,16 +324,33 @@ fn format_same_as_before(sh: &mut Sheet, axis: Axis, at: u32, count: u32, (k0, k
         } else {
             sh.cells.iter_range(RangeRef::new(cell(prev, k0), cell(prev, k1))).map(|(c, _)| c.row).collect()
         };
-        if !whole_lines {
-            let other = if axis == Axis::Rows { &sh.cols } else { &sh.rows };
-            v.extend(other.range(k0..=k1).filter(|(_, l)| l.style.is_some()).map(|(k, _)| *k));
-            v.sort_unstable();
-            v.dedup();
-        }
+        // An inherited border can need clearing even when no source cell is stored.
+        let other = if axis == Axis::Rows { &sh.cols } else { &sh.rows };
+        v.extend(
+            other
+                .range(k0..=k1)
+                .filter(|(_, l)| l.style.is_some_and(|id| !whole_lines || styles.get(id).borders != Default::default()))
+                .map(|(k, _)| *k),
+        );
+        v.sort_unstable();
+        v.dedup();
         v
     };
-    let styled: Vec<(u32, gridcraft_model::StyleId)> =
-        across.into_iter().map(|k| (k, sh.style_id(cell(prev, k)))).filter(|(_, st)| *st != gridcraft_model::StyleId::DEFAULT).collect();
+    let styled: Vec<_> = across
+        .into_iter()
+        .filter_map(|k| {
+            let source = sh.style_id(cell(prev, k));
+            if source == gridcraft_model::StyleId::DEFAULT {
+                return None;
+            }
+            let far = if end < if axis == Axis::Rows { MAX_ROWS } else { MAX_COLS } {
+                sh.style_id(cell(end, k))
+            } else {
+                gridcraft_model::StyleId::DEFAULT
+            };
+            Some((k, inserted_style(styles, source, far, axis)))
+        })
+        .collect();
     // New cells are empty after the shift. Group destination lines by their inherited style,
     // then count only cells whose source style actually differs. This avoids scanning a huge
     // rectangle of cells that already inherit the requested format.
@@ -379,6 +399,39 @@ fn format_same_as_before(sh: &mut Sheet, axis: Axis, at: u32, count: u32, (k0, k
     false
 }
 
+/// Keep the source's shared edge. The opposite and side edges continue only if the cell
+/// across the gap also has them. This matches Excel's boxed-list middle and outside inserts;
+/// mixed border weights/colors and diagonals are model-derived, not observed in Excel.
+fn inserted_style(styles: &mut StyleTable, source: gridcraft_model::StyleId, far: gridcraft_model::StyleId, axis: Axis) -> gridcraft_model::StyleId {
+    let far = styles.get(far).borders;
+    styles.derive(source, |style| {
+        let b = &mut style.borders;
+        if axis == Axis::Rows {
+            b.top = b.bottom;
+            if far.top.is_none() {
+                b.bottom = Default::default();
+            }
+            if far.left.is_none() {
+                b.left = Default::default();
+            }
+            if far.right.is_none() {
+                b.right = Default::default();
+            }
+        } else {
+            b.left = b.right;
+            if far.left.is_none() {
+                b.right = Default::default();
+            }
+            if far.top.is_none() {
+                b.top = Default::default();
+            }
+            if far.bottom.is_none() {
+                b.bottom = Default::default();
+            }
+        }
+    })
+}
+
 fn inherit_line_format(sh: &mut Sheet, axis: Axis, at: u32, count: u32) {
     if at == 0 {
         return;
@@ -415,7 +468,6 @@ fn insert_lines(s: &mut Session, p: &Json, axis: Axis) -> Result<Json> {
     let out = edit(s, |cx| {
         let name = cx.wb.sheet(sheet).map(|s| s.name.clone()).unwrap_or_default();
         cx.protection_checked = true;
-        let formatting_skipped;
         {
             let sh = cx.sheet_mut(sheet)?;
             match axis {
@@ -425,10 +477,9 @@ fn insert_lines(s: &mut Session, p: &Json, axis: Axis) -> Result<Json> {
             shift_sheet_features(sh, axis, at, count, true);
             // New lines take the format of the line before (Excel's "Format Same As Above").
             inherit_line_format(sh, axis, at, count);
-            // So do their cells.
-            let across = if axis == Axis::Rows { MAX_COLS } else { MAX_ROWS };
-            formatting_skipped = format_same_as_before(sh, axis, at, count, (0, across - 1), true);
         }
+        let across = if axis == Axis::Rows { MAX_COLS } else { MAX_ROWS };
+        let formatting_skipped = format_same_as_before(&mut cx.wb, sheet, axis, at, count, (0, across - 1), true);
         rewrite(&mut cx.wb, &name, &Edit::Insert { axis, at, count });
         cx.structural = true;
         Ok(if formatting_skipped { json!({"formattingSkipped": true, "formattingCellLimit": MAX_FORMAT_SAME_AS_ABOVE}) } else { Json::Null })
@@ -637,9 +688,9 @@ fn insert_cells(s: &mut Session, p: &Json) -> Result<Json> {
         shift_cell_features(sh, &e);
         // The new cells take the format of the cells above them, or to their left for a shift right.
         let formatting_skipped = if right {
-            format_same_as_before(sh, Axis::Cols, r.start.col, r.width(), (r.start.row, r.end.row), false)
+            format_same_as_before(&mut cx.wb, sheet, Axis::Cols, r.start.col, r.width(), (r.start.row, r.end.row), false)
         } else {
-            format_same_as_before(sh, Axis::Rows, r.start.row, r.height(), (r.start.col, r.end.col), false)
+            format_same_as_before(&mut cx.wb, sheet, Axis::Rows, r.start.row, r.height(), (r.start.col, r.end.col), false)
         };
         let name = cx.wb.sheet(sheet).map(|s| s.name.clone()).unwrap_or_default();
         rewrite(&mut cx.wb, &name, &e);

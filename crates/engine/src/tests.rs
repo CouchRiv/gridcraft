@@ -1139,6 +1139,146 @@ fn inserted_rows_columns_and_cells_take_the_format_of_the_cells_before() {
     assert_eq!(sh.cells.iter_range(gridcraft_core::RangeRef::cols(0, 0)).count(), 0);
 }
 
+fn boxed_insert_session() -> Session {
+    let mut s = s();
+    s.execute("range.setValues", json!({"range": "A1", "values": [[1, 2, 3], [4, 5, 6], [7, 8, 9]]})).unwrap();
+    s.execute("home.fillColor", json!({"range": "A1:C3", "color": "#FFF2CC"})).unwrap();
+    s.execute("home.borders", json!({"range": "A1:C3", "preset": "all"})).unwrap();
+    s.execute("home.numberFormat", json!({"range": "A1:C3", "code": "0.00%"})).unwrap();
+    s.execute("home.italic", json!({"range": "A1:C3", "on": true})).unwrap();
+    s
+}
+
+fn cell_style(s: &Session, a: &str) -> gridcraft_model::Style {
+    let wb = &s.doc().unwrap().wb;
+    wb.styles.get(wb.active().unwrap().style_id(CellRef::parse(a).unwrap())).clone()
+}
+
+#[test]
+fn inserting_in_a_box_keeps_all_four_borders() {
+    // Excel 365 (Windows), @Harrison-Booth: middle row/column inserts keep all edges.
+    for (command, params, source, target) in [
+        ("home.insertRows", json!({"rows": "3:3"}), "B2", "B3"),
+        ("home.insertColumns", json!({"cols": "C:C"}), "B2", "C2"),
+        ("home.insertCells", json!({"range": "B3", "shift": "down"}), "B2", "B3"),
+        ("home.insertCells", json!({"range": "C2", "shift": "right"}), "B2", "C2"),
+    ] {
+        let mut s = boxed_insert_session();
+        let expected = cell_style(&s, source);
+        s.execute(command, params).unwrap();
+        assert_eq!(cell_style(&s, target), expected, "{command} {target}");
+        assert_eq!(v(&s, target), Value::Empty);
+    }
+}
+
+#[test]
+fn inserting_below_a_box_keeps_only_its_shared_top_border() {
+    for (command, params) in [("home.insertRows", json!({"rows": "4:4"})), ("home.insertCells", json!({"range": "B4", "shift": "down"}))] {
+        let mut s = boxed_insert_session();
+        let mut expected = cell_style(&s, "B3");
+        expected.borders = gridcraft_model::Borders { top: expected.borders.bottom, ..Default::default() };
+        s.execute(command, params).unwrap();
+        assert_eq!(cell_style(&s, "B4"), expected, "{command}");
+        assert_eq!(v(&s, "B4"), Value::Empty);
+    }
+}
+
+#[test]
+fn inserting_right_of_a_box_keeps_only_its_shared_left_border() {
+    for (command, params) in [("home.insertColumns", json!({"cols": "D:D"})), ("home.insertCells", json!({"range": "D2", "shift": "right"}))] {
+        let mut s = boxed_insert_session();
+        let mut expected = cell_style(&s, "C2");
+        expected.borders = gridcraft_model::Borders { left: expected.borders.right, ..Default::default() };
+        s.execute(command, params).unwrap();
+        assert_eq!(cell_style(&s, "D2"), expected, "{command}");
+        assert_eq!(v(&s, "D2"), Value::Empty);
+    }
+}
+
+#[test]
+fn inserting_below_a_box_does_not_copy_its_thick_right_border() {
+    let mut s = boxed_insert_session();
+    let wb = std::sync::Arc::make_mut(&mut s.doc_mut().unwrap().wb);
+    let source = wb.active().unwrap().style_id(CellRef::parse("C3").unwrap());
+    let thick = wb.styles.derive(source, |st| st.borders.right.style = gridcraft_model::BorderStyle::Thick);
+    wb.sheet_mut(0).unwrap().set_style(CellRef::parse("C3").unwrap(), thick);
+    let mut expected = cell_style(&s, "C3");
+    expected.borders = gridcraft_model::Borders { top: expected.borders.bottom, ..Default::default() };
+    s.execute("home.insertRows", json!({"rows": "4:4"})).unwrap();
+    assert_eq!(cell_style(&s, "C4"), expected);
+    assert_eq!(cell_style(&s, "C3").borders.right.style, gridcraft_model::BorderStyle::Thick);
+}
+
+#[test]
+fn inserted_border_model_uses_shared_edges_and_checks_each_far_side() {
+    // Model-only: mixed weights/colors, missing individual far edges, multiple inserted lines.
+    // The far edge gates the source's edge; it does not supply its own weight/color.
+    for right in [false, true] {
+        for partial in [false, true] {
+            let mut s = boxed_insert_session();
+            let (source, far, target) = if right { ("A2", "B2", "B2") } else { ("B1", "B2", "B2") };
+            let wb = std::sync::Arc::make_mut(&mut s.doc_mut().unwrap().wb);
+            let source_cell = CellRef::parse(source).unwrap();
+            let far_cell = CellRef::parse(far).unwrap();
+            let original = wb.active().unwrap().style_id(source_cell);
+            let source_id = wb.styles.derive(original, |st| {
+                let edge = if right { &mut st.borders.right } else { &mut st.borders.bottom };
+                edge.style = gridcraft_model::BorderStyle::Thick;
+                edge.color = gridcraft_model::Color::Rgb(0x123456);
+            });
+            let far_id = wb.styles.derive(original, |st| {
+                if right {
+                    st.borders.bottom = Default::default();
+                } else {
+                    st.borders.right = Default::default();
+                }
+            });
+            wb.sheet_mut(0).unwrap().set_style(source_cell, source_id);
+            wb.sheet_mut(0).unwrap().set_style(far_cell, far_id);
+            let mut expected = cell_style(&s, source);
+            if right {
+                expected.borders.left = expected.borders.right;
+                expected.borders.bottom = Default::default();
+            } else {
+                expected.borders.top = expected.borders.bottom;
+                expected.borders.right = Default::default();
+            }
+            let (command, params) = match (right, partial) {
+                (false, false) => ("home.insertRows", json!({"rows": "2:3"})),
+                (false, true) => ("home.insertCells", json!({"range": "B2:B3", "shift": "down"})),
+                (true, false) => ("home.insertColumns", json!({"cols": "B:C"})),
+                (true, true) => ("home.insertCells", json!({"range": "B2:C2", "shift": "right"})),
+            };
+            s.execute(command, params).unwrap();
+            assert_eq!(cell_style(&s, target), expected, "right={right}, partial={partial}");
+            assert_eq!(cell_style(&s, if right { "C2" } else { "B3" }), expected);
+        }
+    }
+}
+
+#[test]
+fn insert_border_model_also_filters_inherited_line_formats() {
+    for rows in [true, false] {
+        let mut s = boxed_insert_session();
+        let expected_source = cell_style(&s, "A1");
+        let wb = std::sync::Arc::make_mut(&mut s.doc_mut().unwrap().wb);
+        let style = wb.active().unwrap().style_id(CellRef::parse("A1").unwrap());
+        let sh = wb.sheet_mut(0).unwrap();
+        sh.cells = Default::default();
+        // A whole row style must be filtered even without any stored source cells. The column
+        // case uses finite whole-row styles crossing a column insert, exercising its inheritance.
+        sh.rows.insert(0, gridcraft_model::LineInfo { style: Some(style), ..Default::default() });
+        let (command, params, target) =
+            if rows { ("home.insertRows", json!({"rows": "2:2"}), "B2") } else { ("home.insertColumns", json!({"cols": "B:B"}), "B1") };
+        let mut expected = expected_source;
+        if rows {
+            expected.borders = gridcraft_model::Borders { top: expected.borders.bottom, ..Default::default() };
+        }
+        s.execute(command, params).unwrap();
+        assert_eq!(cell_style(&s, target), expected);
+    }
+}
+
 #[test]
 fn inserting_many_rows_under_a_wide_formatted_row_stays_bounded() {
     // A row formatted cell by cell across the sheet (not as a whole row). Ten new rows take its
