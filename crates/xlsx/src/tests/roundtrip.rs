@@ -1225,6 +1225,35 @@ fn package_kind_sets_workbook_content_type() {
     assert_eq!(crate::XlsxKind::from_path("noext"), crate::XlsxKind::Workbook);
 }
 
+/// All fifteen elements follow the order observed by @Harrison-Booth in Excel 365 (Windows).
+#[test]
+fn core_properties_follow_excel_order() {
+    let bytes = write_xlsx(&sample()).unwrap();
+    let mut package = Package::open(&bytes).unwrap();
+    let core = package.read_xml("docProps/core.xml").unwrap().unwrap();
+    let names: Vec<_> = core.children.iter().map(|e| e.name.as_str()).collect();
+    assert_eq!(
+        names,
+        [
+            "title",
+            "subject",
+            "creator",
+            "keywords",
+            "description",
+            "lastModifiedBy",
+            "revision",
+            "lastPrinted",
+            "created",
+            "modified",
+            "category",
+            "identifier",
+            "contentStatus",
+            "language",
+            "version",
+        ]
+    );
+}
+
 /// Every property of `docProps/core.xml` that Excel shows or writes survives an open and save, with
 /// the dates typed `dcterms:W3CDTF` as the schema requires.
 #[test]

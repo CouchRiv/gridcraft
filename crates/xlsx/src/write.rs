@@ -376,15 +376,15 @@ pub fn write_xlsx_named(wb: &Workbook, kind: XlsxKind, book_name: Option<&str>) 
         ("cp:keywords", &p.keywords),
         ("dc:description", &p.description),
         ("cp:lastModifiedBy", &p.last_modified_by),
+        ("cp:revision", &p.revision),
         ("cp:lastPrinted", &p.last_printed),
         ("dcterms:created", &p.created),
         ("dcterms:modified", &p.modified),
         ("cp:category", &p.category),
-        ("cp:contentStatus", &p.content_status),
-        ("cp:revision", &p.revision),
-        ("cp:version", &p.version),
         ("dc:identifier", &p.identifier),
+        ("cp:contentStatus", &p.content_status),
         ("dc:language", &p.language),
+        ("cp:version", &p.version),
     ] {
         if !v.is_empty() {
             // The schema types the Dublin Core dates by attribute (`xsi:type`), not by element.
