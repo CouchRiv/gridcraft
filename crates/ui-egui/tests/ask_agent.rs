@@ -32,6 +32,11 @@ fn send(h: &mut Harness, text: &str) {
     h.run_steps(2);
 }
 
+/// The bubble's Undo; the title bar has a button with the same label, and the bubble is drawn on top.
+fn click_bubble_undo(h: &mut Harness) {
+    h.get_all_by_label("Undo").last().expect("the bubble's Undo button").click();
+}
+
 fn step(h: &mut Harness, hub: &AgentHub, conn: u64, prompt: &str, cell: &str, val: &str) -> ask_agent::Request {
     send(h, prompt);
     let r = hub.listen(conn, Some("editor"), Duration::ZERO, || true).unwrap();
@@ -82,7 +87,7 @@ fn bubble_flow_send_reply_followup_undo_refusal_and_keep() {
     assert_eq!((r2.history.len(), r2.history[0].instruction.as_str()), (1, "clean values"));
 
     // 3. Undo reverts everything the agent did, across the request and its follow-up.
-    h.get_by_label("Undo").click();
+    click_bubble_undo(&mut h);
     h.run_steps(2);
     assert!(h.state().ask_agent.open.is_none() && cell_text(&mut h, "B3") == "North" && cell_text(&mut h, "B4") == "South");
 
@@ -90,7 +95,7 @@ fn bubble_flow_send_reply_followup_undo_refusal_and_keep() {
     ask_agent::open_from_ui(h.state_mut());
     step(&mut h, &hub, conn, "clean values", "B3", "north");
     h.state_mut().run("cell.set", json!({"cell": "B3", "input": "human"})).unwrap();
-    h.get_by_label("Undo").click();
+    click_bubble_undo(&mut h);
     h.run_steps(1);
     assert!(h.state().toast.as_ref().unwrap().0.contains("changed") && cell_text(&mut h, "B3") == "human");
 

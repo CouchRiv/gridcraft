@@ -126,7 +126,7 @@ impl SheetApp {
             self.toast = Some((msg, now_ms()));
         }
         let cmd = if fill_selection { "range.fill" } else { "cell.set" };
-        let target = if fill_selection { None } else { Some(RangeRef::cell(ed.cell)) };
+        let target = if fill_selection { None } else { Some(gridcraft_engine::core::RangeRef::cell(ed.cell)) };
         if let Some(why) = crate::ask_agent::held_for(self, cmd, target) {
             self.toast = Some((why, now_ms()));
             self.editor = Some(ed);
