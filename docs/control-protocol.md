@@ -70,6 +70,8 @@ connection; nothing sent after it runs. Blank lines are skipped.
 | `ui.set` | `{dark?, formulaBar?, ribbonCollapsed?, animations?}` | UI preferences (`formulaBar` runs `view.formulaBar`) |
 | `ui.resize` / `ui.focus` | `{width, height}` | Window control |
 | `app.open` / `app.save` / `app.quit` | `{path, password?}` / `{path?}` | Files and lifetime. `password` opens a password-protected workbook; without it, such a workbook returns an error (never a dialog) |
+| `agent.listen` | `{timeoutMs?, agent?}` | Wait for an Ask Agent request (`{id, instruction, selection, ...}`) |
+| `agent.reply` | `{id, text, done?, error?}` | Progress note or final answer for an Ask Agent request |
 
 ### Screenshot budgets
 
@@ -84,9 +86,6 @@ large pathless capture can be refused there or by its base64 length even when it
 fits. `path` writes the PNG to a file instead of returning base64 text and so avoids those two
 base64 costs, but it does not bypass the per-image, aggregate, encoding-working-set or peak
 limits.
-
-| `agent.listen` | `{timeoutMs?, agent?}` | Wait for an Ask Agent request (`{id, instruction, selection, ...}`) |
-| `agent.reply` | `{id, text, done?, error?}` | Progress note or final answer for an Ask Agent request |
 
 Any other method name that is a command id (e.g. `home.bold`) runs that command. Its params may
 include `window` or `doc` to run it in that window, as with `engine.execute`; the window commands
