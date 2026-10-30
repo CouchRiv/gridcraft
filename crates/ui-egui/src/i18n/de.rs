@@ -463,6 +463,7 @@ pub(super) fn translate(text: &str) -> Option<&'static str> {
         "New sheet (⇧F11)" => "Neues Blatt (⇧F11)",
         "Text Box" => "Textfeld",
         "Ask Agent" => "Agenten fragen",
+        "Ask Agent…" => "Agenten fragen…",
         "Ask\nAgent" => "Agenten\nfragen",
         "Waiting for an agent…" => "Warten auf einen Agenten…",
         "Working on it…" => "In Bearbeitung…",

@@ -558,6 +558,7 @@ pub(super) fn translate(text: &str) -> Option<&'static str> {
         "AutoSave: save after every change (workbooks saved to a file)" => "Automatické ukládání: ukládat po každé změně (sešity uložené do souboru)",
         "All sheets" => "Všechny listy",
         "Ask Agent" => "Zeptat se agenta",
+        "Ask Agent…" => "Zeptat se agenta…",
         "Ask\nAgent" => "Zeptat se\nagenta",
         "Waiting for an agent…" => "Čekání na agenta…",
         "Working on it…" => "Pracuji na tom…",

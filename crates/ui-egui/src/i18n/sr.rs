@@ -447,6 +447,7 @@ pub(super) fn translate(text: &str) -> Option<&'static str> {
         "New sheet (⇧F11)" => "Нови лист (⇧F11)",
         "Text Box" => "Текстуално поље",
         "Ask Agent" => "Pitaj agenta",
+        "Ask Agent…" => "Pitaj agenta…",
         "Ask\nAgent" => "Pitaj\nagenta",
         "Waiting for an agent…" => "Čekanje agenta…",
         "Working on it…" => "U toku…",

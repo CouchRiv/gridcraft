@@ -439,6 +439,7 @@ pub(super) fn translate(text: &str) -> Option<&'static str> {
         "New sheet (⇧F11)" => "新建工作表 (⇧F11)",
         "Text Box" => "文本框",
         "Ask Agent" => "询问智能体",
+        "Ask Agent…" => "询问智能体…",
         "Ask\nAgent" => "询问\n智能体",
         "Waiting for an agent…" => "等待智能体…",
         "Working on it…" => "正在处理…",

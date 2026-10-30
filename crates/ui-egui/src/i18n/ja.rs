@@ -1005,6 +1005,7 @@ pub(super) const DIALOGS: &[(&str, &str)] = &[
 /// same key set; it never overlaps them.
 pub(super) const EXTRA: &[(&str, &str)] = &[
     ("Ask Agent", "エージェントに依頼"),
+    ("Ask Agent…", "エージェントに依頼…"),
     ("Ask\nAgent", "エージェント\nに依頼"),
     ("Waiting for an agent…", "エージェントを待っています…"),
     ("Working on it…", "作業中…"),

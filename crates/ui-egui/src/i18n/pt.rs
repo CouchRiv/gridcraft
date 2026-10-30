@@ -982,6 +982,7 @@ pub(super) fn translate(text: &str) -> Option<&'static str> {
         }
         "All sheets" => "Todas as planilhas",
         "Ask Agent" => "Perguntar ao agente",
+        "Ask Agent…" => "Perguntar ao agente…",
         "Ask\nAgent" => "Perguntar\nao agente",
         "Waiting for an agent…" => "Aguardando um agente…",
         "Working on it…" => "Trabalhando nisso…",
