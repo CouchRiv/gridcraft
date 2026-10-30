@@ -60,6 +60,8 @@ pub struct Open {
     asked: String,
     /// Undo depth before the agent's first edit, once it has edited.
     edited_from: Option<usize>,
+    /// Undo depth just after the thread's last merged step, to tell whether a person edited since.
+    edited_to: Option<usize>,
     commented: bool,
 }
 
@@ -123,7 +125,8 @@ pub fn open_from_ui(app: &mut SheetApp) {
     let anchor = app.grid.geo.as_ref().map_or(Rect::from_min_size(Pos2::new(100.0, 100.0), Vec2::new(100.0, 24.0)), |g| g.range_rect(sh, range));
     let sheet = sh.name.clone();
     app.ask_agent.draft.clear();
-    app.ask_agent.open = Some(Open { id: None, anchor, turns: vec![], sheet, range, asked: String::new(), edited_from: None, commented: false });
+    app.ask_agent.open =
+        Some(Open { id: None, anchor, turns: vec![], sheet, range, asked: String::new(), edited_from: None, edited_to: None, commented: false });
 }
 
 /// Control methods that only read.
@@ -132,6 +135,38 @@ pub fn is_query_method(cmd: &str) -> bool {
         cmd,
         "cell.get" | "sheet.read" | "selection.stats" | "document.inspect" | "engine.commands" | "engine.journal" | "ui.inspect" | "ui.screenshot"
     )
+}
+
+/// Where this thread's next undo step starts: `depth` before the command, unless that thread
+/// already has a group the history no longer reaches, in which case a person edited in between
+/// and their step starts a group of its own.
+fn group_start(app: &mut SheetApp, request: Option<u64>, depth: usize) -> usize {
+    match app.ask_agent.open.as_mut().filter(|o| request.is_none_or(|id| o.id == Some(id))) {
+        Some(o) => {
+            if o.edited_to.is_some_and(|to| to != depth) {
+                o.edited_from = None;
+            }
+            *o.edited_from.get_or_insert(depth)
+        }
+        None => depth,
+    }
+}
+
+/// Collapse what the command just added, from `from`, into one "Ask Agent" step, and remember
+/// where the group ends. Nothing a person did in between is merged into or dropped.
+fn group_done(app: &mut SheetApp, request: Option<u64>, from: usize) {
+    let Some(to) = app.session.active_mut().map(|d| {
+        if d.undo.len() > from {
+            d.undo.truncate(from + 1);
+            d.undo[from].label = "Ask Agent".into();
+        }
+        d.undo.len()
+    }) else {
+        return;
+    };
+    if let Some(o) = app.ask_agent.open.as_mut().filter(|o| request.is_none_or(|id| o.id == Some(id))) {
+        o.edited_to = Some(to);
+    }
 }
 
 /// Run `command` for request `request_id` from connection `conn`: its edits join one undo step and
@@ -146,20 +181,11 @@ pub fn run_for(app: &mut SheetApp, conn: u64, request_id: u64, command: &str, mu
         o.entry("author").or_insert(json!(format!("Agent ({name})")));
     }
     let depth = app.session.active().map_or(0, |d| d.undo.len());
-    let from = match app.ask_agent.open.as_mut().filter(|o| o.id == Some(request_id)) {
-        Some(o) => *o.edited_from.get_or_insert(depth),
-        None => depth,
-    };
+    let from = group_start(app, Some(request_id), depth);
     app.ask_agent.agent_turn = true;
     let result = app.run(command, params);
     app.ask_agent.agent_turn = false;
-    if let Some(d) = app.session.active_mut()
-        && d.undo.len() > from
-    {
-        // One undo step for everything the agent did for this thread.
-        d.undo.truncate(from + 1);
-        d.undo[from].label = "Ask Agent".into();
-    }
+    group_done(app, Some(request_id), from);
     result
 }
 
@@ -253,7 +279,7 @@ fn note_once(app: &mut SheetApp, s: &Snapshot) {
     let cell = at.a1();
     let text = format!("You: {}\n\nAgent ({name}): {answer}", open.asked);
     let depth = app.session.active().map_or(0, |d| d.undo.len());
-    let from = *open.edited_from.get_or_insert(depth);
+    let from = group_start(app, Some(s.id), depth);
     let existing = app
         .session
         .active()
@@ -262,11 +288,7 @@ fn note_once(app: &mut SheetApp, s: &Snapshot) {
     app.ask_agent.agent_turn = true;
     let _ = app.session.run(if existing { "review.replyComment" } else { "review.newComment" }, params);
     app.ask_agent.agent_turn = false;
-    if let Some(d) = app.session.active_mut()
-        && d.undo.len() > from + 1
-    {
-        d.undo.truncate(from + 1);
-    }
+    group_done(app, Some(s.id), from);
 }
 
 /// The chip beside the selection, or the open bubble with its request.

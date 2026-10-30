@@ -106,3 +106,32 @@ fn bubble_flow_send_reply_followup_undo_refusal_and_keep() {
     h.run_steps(2);
     assert!(h.state().ask_agent.open.is_none() && cell_text(&mut h, "B4") == "SOUTH");
 }
+
+#[test]
+fn a_persons_edit_between_agent_turns_keeps_its_own_undo_step() {
+    let hub = AgentHub::default();
+    let conn = 7;
+    hub.listen(conn, Some("editor"), Duration::ZERO, || true);
+    let mut h = harness(hub.clone());
+    h.state_mut().run("selection.set", json!({"range": "B2:C4"})).unwrap();
+    ask_agent::open_from_ui(h.state_mut());
+    h.run_steps(2);
+
+    // 1. The agent edits (its steps and its note are one undo step), then the person edits.
+    step(&mut h, &hub, conn, "clean values", "B3", "north");
+    let after_agent = h.state().session.active().unwrap().undo.len();
+    h.state_mut().run("cell.set", json!({"cell": "B4", "input": "human"})).unwrap();
+    assert_eq!(h.state().session.active().unwrap().undo.len(), after_agent + 1);
+
+    // 2. A later turn of the same thread must not merge into, or drop, the person's step.
+    step(&mut h, &hub, conn, "also south", "B5", "south");
+    assert_eq!(h.state().session.active().unwrap().undo.len(), after_agent + 2, "the person's step survived");
+
+    // 3. Undo takes back the agent's last turn, then the person's own edit, then the first turn.
+    h.state_mut().run("edit.undo", json!({})).unwrap();
+    assert_eq!((cell_text(&mut h, "B4"), cell_text(&mut h, "B5")), ("human".into(), String::new()));
+    h.state_mut().run("edit.undo", json!({})).unwrap();
+    assert_eq!((cell_text(&mut h, "B3"), cell_text(&mut h, "B4")), ("north".into(), "South".into()));
+    h.state_mut().run("edit.undo", json!({})).unwrap();
+    assert_eq!(cell_text(&mut h, "B3"), "North");
+}
