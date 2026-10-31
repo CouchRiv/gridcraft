@@ -366,7 +366,12 @@ fn serve(
                         o.insert("id".into(), id);
                         if o.get("ok") == Some(&Json::Bool(false)) && !o.contains_key("errorCode") {
                             let raw = o.get("error").and_then(Json::as_str).unwrap_or("operation failed").to_owned();
-                            let (code, message) = raw.split_once(": ").unwrap_or(("APPLY_FAILED", &raw));
+                            // Only a real code prefixes the message: "Cell A1: bad ref" is one
+                            // message, not the code "Cell A1".
+                            let (code, message) = raw
+                                .split_once(": ")
+                                .filter(|(c, _)| !c.is_empty() && c.bytes().all(|b| b.is_ascii_uppercase() || b.is_ascii_digit() || b == b'_'))
+                                .unwrap_or(("APPLY_FAILED", &raw));
                             o.insert("errorCode".into(), json!(code));
                             o.insert("error".into(), json!(message));
                         }
