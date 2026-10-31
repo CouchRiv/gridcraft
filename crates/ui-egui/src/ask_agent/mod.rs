@@ -117,6 +117,11 @@ fn document_json(app: &SheetApp) -> Value {
 
 /// Open the bubble at the selection (chip, ribbon, context menu, shortcut).
 pub fn open_from_ui(app: &mut SheetApp) {
+    // A bubble that owns a request keeps it: replacing it would leave the request in the hub with
+    // nothing to close it, and every write without its id would stay refused as held.
+    if app.ask_agent.open.as_ref().is_some_and(|o| o.id.is_some()) {
+        return;
+    }
     let (Some(d), Some(sh)) = (app.session.active(), app.session.active().and_then(|d| d.wb.active())) else { return };
     if app.ask_agent.hub.is_none() {
         return;
@@ -175,6 +180,11 @@ pub fn run_for(app: &mut SheetApp, conn: u64, request_id: u64, command: &str, mu
     let hub = app.ask_agent.hub.clone().ok_or("no agent hub")?;
     hub.may_edit(conn, Some(request_id)).map_err(|e| e.to_string())?;
     let name = hub.snapshot(request_id).and_then(|s| s.agent).unwrap_or_default();
+    // The request was asked about one workbook: run there, not on whichever one is active now.
+    let target = hub
+        .document(request_id)
+        .and_then(|d| d.get("id").and_then(Value::as_u64))
+        .map_or(gridcraft_engine::Target::Active, gridcraft_engine::Target::Doc);
     if command.starts_with("review.new")
         && let Some(o) = params.as_object_mut()
     {
@@ -183,7 +193,11 @@ pub fn run_for(app: &mut SheetApp, conn: u64, request_id: u64, command: &str, mu
     let depth = app.session.active().map_or(0, |d| d.undo.len());
     let from = group_start(app, Some(request_id), depth);
     app.ask_agent.agent_turn = true;
+    let guard = app.session.enter_target(target).ok();
     let result = app.run(command, params);
+    if let Some(guard) = guard {
+        app.session.leave_target(guard);
+    }
     app.ask_agent.agent_turn = false;
     group_done(app, Some(request_id), from);
     result
@@ -363,5 +377,35 @@ mod tests {
         close(&mut app);
         app.run("edit.undo", json!({})).unwrap();
         assert!(app.session.active().unwrap().wb.active().unwrap().comments.is_empty());
+    }
+
+    /// The request names its workbook: when another one becomes active, its command still lands
+    /// in the one it was asked about.
+    #[test]
+    fn a_requests_command_runs_in_the_workbook_it_was_asked_about() {
+        let hub = AgentHub::default();
+        let mut session = gridcraft_engine::Session::new();
+        session.new_workbook();
+        let first_uid = session.active().unwrap().uid;
+        let mut app = SheetApp::new(session, Default::default()).with_agent_hub(hub.clone());
+        command(&mut app, &json!({"instruction": "Fill B2"})).unwrap();
+        let request = hub.listen(1, Some("Codex"), Duration::ZERO, || true).unwrap();
+        assert_eq!(request.document["id"].as_u64(), Some(first_uid), "the request carries its document");
+
+        // A second workbook becomes active before the agent's command arrives.
+        app.session.new_workbook();
+        let second_uid = app.session.active().unwrap().uid;
+        assert_ne!(second_uid, first_uid);
+        run_for(&mut app, 1, request.id, "cell.set", json!({"cell": "B2", "input": "north"})).unwrap();
+
+        let text = |app: &mut SheetApp, uid: u64| -> String {
+            let p = json!({"doc": uid, "cell": "B2"});
+            let guard = app.session.enter_target(gridcraft_engine::Target::from_json(&p).unwrap()).unwrap();
+            let r = app.session.run("cell.get", p).map(|v| v["text"].as_str().unwrap_or_default().to_string());
+            app.session.leave_target(guard);
+            r.unwrap_or_default()
+        };
+        assert_eq!(text(&mut app, first_uid), "north", "the edit landed in the requested workbook");
+        assert_eq!(text(&mut app, second_uid), "", "the active workbook was left alone");
     }
 }

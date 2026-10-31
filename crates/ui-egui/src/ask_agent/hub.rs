@@ -201,6 +201,12 @@ impl AgentHub {
         self.lock().entries.retain(|e| e.request.id != id);
     }
 
+    /// The document a request was asked about, so its commands run there and not on whichever
+    /// workbook happens to be active when they arrive.
+    pub fn document(&self, id: u64) -> Option<Value> {
+        self.lock().entries.iter().find(|e| e.request.id == id).map(|e| e.request.document.clone())
+    }
+
     /// Answer `agent.listen` and `agent.reply` for connection `conn`; `None` for any other method.
     pub fn handle(&self, conn: u64, method: &str, p: &Value, alive: impl Fn() -> bool) -> Option<Value> {
         let reply = match method {

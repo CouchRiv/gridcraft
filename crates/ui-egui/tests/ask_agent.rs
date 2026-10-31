@@ -135,3 +135,33 @@ fn a_persons_edit_between_agent_turns_keeps_its_own_undo_step() {
     h.state_mut().run("edit.undo", json!({})).unwrap();
     assert_eq!(cell_text(&mut h, "B3"), "North");
 }
+
+#[test]
+fn reopening_keeps_a_bubble_that_owns_a_request() {
+    let hub = AgentHub::default();
+    let conn = 9;
+    hub.listen(conn, Some("editor"), Duration::ZERO, || true);
+    let mut h = harness(hub.clone());
+    h.state_mut().run("selection.set", json!({"range": "B2:C4"})).unwrap();
+    ask_agent::open_from_ui(h.state_mut());
+    h.run_steps(2);
+    send(&mut h, "clean values");
+    let r = hub.listen(conn, Some("editor"), Duration::ZERO, || true).expect("request queued");
+    let before = h.state().ask_agent.open.as_ref().and_then(|o| o.id);
+    assert_eq!(before, Some(r.id));
+
+    // Reopening from the ribbon, the menu or the control command must not orphan the request:
+    // the hub would keep it held and every write without its id would stay refused.
+    ask_agent::open_from_ui(h.state_mut());
+    assert_eq!(h.state().ask_agent.open.as_ref().and_then(|o| o.id), before, "the bubble kept its request");
+    assert!(hub.snapshot(r.id).is_some(), "the request is still in the hub");
+    let opened = h.state_mut().run("ui.askAgent", json!({})).unwrap();
+    assert_eq!(opened["id"].as_u64(), Some(r.id));
+
+    // A bubble with no request may still re-anchor to the selection.
+    hub.reply(conn, r.id, "done", true, None).unwrap();
+    h.run_steps(2);
+    h.state_mut().run("ui.askAgent", json!({"close": true})).unwrap();
+    ask_agent::open_from_ui(h.state_mut());
+    assert_eq!(h.state().ask_agent.open.as_ref().and_then(|o| o.id), None);
+}
